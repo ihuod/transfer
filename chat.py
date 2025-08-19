@@ -1,37 +1,51 @@
+# pip install lightgbm
+import numpy as np
 import pandas as pd
+import lightgbm as lgb
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+
+# 1) Категориальные признаки (если есть)
+cat_cols = [c for c in X_train.columns if str(X_train[c].dtype) in ("category", "object")]
+for c in cat_cols:
+    X_train[c] = X_train[c].astype("category")
+    X_test[c]  = X_test[c].astype("category")
+
+# 2) Модель
+reg = lgb.LGBMRegressor(
+    objective="regression",     # варианты: "regression_l1", "huber", "fair", "poisson" (для неотрицательных счётчиков)
+    n_estimators=10000,
+    learning_rate=0.03,
+    num_leaves=64,
+    subsample=0.8,
+    colsample_bytree=0.8,
+    reg_alpha=0.1,
+    reg_lambda=0.2,
+    random_state=42,
+    n_jobs=-1
+)
+
+# 3) Обучение с ранней остановкой
+reg.fit(
+    X_train, y_train,
+    eval_set=[(X_test, y_test)],
+    eval_metric="rmse",
+    early_stopping_rounds=200,
+    categorical_feature=cat_cols if len(cat_cols) > 0 else "auto",
+    verbose=200
+)
+
+# 4) Оценка
+y_pred = reg.predict(X_test, num_iteration=reg.best_iteration_)
+rmse = mean_squared_error(y_test, y_pred, squared=False)
+mae  = mean_absolute_error(y_test, y_pred)
+r2   = r2_score(y_test, y_pred)
+print(f"RMSE={rmse:.4f}  MAE={mae:.4f}  R2={r2:.4f}  best_iter={reg.best_iteration_}")
+
+# 5) Топ-важности (gain)
 import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy.stats import ks_2samp
-
-# Пример данных (замените на ваш DataFrame)
-df = pd.DataFrame({
-    'col1': [1.2, 2.5, 3.1, 4.0, 5.2, 6.7, 7.1, 8.0, 9.5, 10.1],
-    'col2': [1.0, 2.1, 3.0, 3.9, 5.0, 6.5, 7.0, 8.5, 9.0, 11.2]
-})
-
-# 1. Визуализация распределений
-plt.figure(figsize=(10, 6))
-
-# Гистограммы + KDE
-sns.histplot(df['col1'], kde=True, color="blue", label="Col1", alpha=0.5, bins=5)
-sns.histplot(df['col2'], kde=True, color="red", label="Col2", alpha=0.5, bins=5)
-plt.title("Гистограммы и KDE распределений")
-plt.xlabel("Значения")
-plt.ylabel("Частота")
-plt.legend()
+importances = pd.Series(
+    reg.booster_.feature_importance(importance_type="gain", iteration=reg.best_iteration_),
+    index=reg.booster_.feature_name()
+).sort_values(ascending=False).head(30)
+importances.plot(kind="barh", figsize=(8, 10)); plt.gca().invert_yaxis(); plt.title("Top-30 Feature Importance (gain)")
 plt.show()
-
-# Boxplot
-plt.figure(figsize=(8, 5))
-sns.boxplot(data=df[['col1', 'col2']], palette=["blue", "red"])
-plt.title("Boxplot столбцов")
-plt.ylabel("Значения")
-plt.show()
-
-# 2. K-S тест
-stat, p_value = ks_2samp(df['col1'], df['col2'])
-print(f"K-S test: p-value = {p_value:.4f}")
-if p_value < 0.05:
-    print("Распределения различаются (отвергаем H₀)")
-else:
-    print("Нет доказательств различия распределений (не отвергаем H₀)")
