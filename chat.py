@@ -1,37 +1,41 @@
-def check_missing_months(df, date_col='date', client_col='client_id'):
+def check_missing_months_crosstab(df, date_col='date', client_col='client_id'):
     """
-    Проверяет наличие пропущенных месяцев для каждого клиента
+    Самая быстрая версия с использованием crosstab
     """
-    # Убедимся, что дата в datetime
     df = df.copy()
     df[date_col] = pd.to_datetime(df[date_col])
     
-    # Получаем уникальные клиенты и даты
-    clients = df[client_col].unique()
+    # Создаем кросс-таблицу наличия данных
+    presence_table = pd.crosstab(
+        index=df[client_col],
+        columns=df[date_col],
+        dropna=False
+    )
+    
+    # Все возможные даты
     all_dates = pd.date_range(df[date_col].min(), df[date_col].max(), freq='MS')
     
+    # Добавляем отсутствующие колонки
+    for date in all_dates:
+        if date not in presence_table.columns:
+            presence_table[date] = 0
+    
+    # Сортируем колонки по дате
+    presence_table = presence_table.reindex(columns=sorted(presence_table.columns))
+    
+    # Анализируем пропуски
     missing_info = {}
     
-    for client in clients:
-        client_data = df[df[client_col] == client]
-        client_dates = client_data[date_col].unique()
-        
-        # Находим пропущенные даты
-        missing_dates = set(all_dates) - set(client_dates)
+    for client in presence_table.index:
+        missing_mask = presence_table.loc[client] == 0
+        missing_dates = missing_mask[missing_mask].index.tolist()
         
         if missing_dates:
             missing_info[client] = {
                 'total_months': len(all_dates),
-                'present_months': len(client_dates),
+                'present_months': len(presence_table.columns) - len(missing_dates),
                 'missing_months': len(missing_dates),
-                'missing_dates_list': sorted(missing_dates)
+                'missing_dates_list': missing_dates
             }
     
-    return missing_info
-
-# Проверяем пропуски
-missing_months = check_missing_months(df)
-print(f"Клиенты с пропущенными месяцами: {len(missing_months)}")
-for client, info in missing_months.items():
-    print(f"Клиент {client}: пропущено {info['missing_months']} месяцев")
-    print(f"  Пропущенные даты: {info['missing_dates_list']}")
+    return missing_info, presence_table
