@@ -1,41 +1,23 @@
-def check_missing_months_crosstab(df, date_col='date', client_col='client_id'):
+def create_target_variable(df, activity_col='IS_ACTIVE_SBOL', date_col='date', client_col='client_id'):
     """
-    Самая быстрая версия с использованием crosstab
+    Создает целевую переменную - активность в следующем месяце
     """
     df = df.copy()
+    
+    # Убеждаемся, что дата в правильном формате
     df[date_col] = pd.to_datetime(df[date_col])
     
-    # Создаем кросс-таблицу наличия данных
-    presence_table = pd.crosstab(
-        index=df[client_col],
-        columns=df[date_col],
-        dropna=False
-    )
+    # Сортируем по клиенту и дате (очень важно!)
+    df = df.sort_values([client_col, date_col])
     
-    # Все возможные даты
-    all_dates = pd.date_range(df[date_col].min(), df[date_col].max(), freq='MS')
+    # Создаем целевую переменную - активность в следующем месяце
+    df['TARGET_NEXT_MONTH'] = df.groupby(client_col)[activity_col].shift(-1)
     
-    # Добавляем отсутствующие колонки
-    for date in all_dates:
-        if date not in presence_table.columns:
-            presence_table[date] = 0
+    # Для последнего месяца каждого клиента будет NaN - это нормально
+    print(f"Создана целевая переменная. Пропусков: {df['TARGET_NEXT_MONTH'].isna().sum()}")
+    print(f"Всего записей: {len(df)}")
     
-    # Сортируем колонки по дате
-    presence_table = presence_table.reindex(columns=sorted(presence_table.columns))
-    
-    # Анализируем пропуски
-    missing_info = {}
-    
-    for client in presence_table.index:
-        missing_mask = presence_table.loc[client] == 0
-        missing_dates = missing_mask[missing_mask].index.tolist()
-        
-        if missing_dates:
-            missing_info[client] = {
-                'total_months': len(all_dates),
-                'present_months': len(presence_table.columns) - len(missing_dates),
-                'missing_months': len(missing_dates),
-                'missing_dates_list': missing_dates
-            }
-    
-    return missing_info, presence_table
+    return df
+
+# Применяем функцию
+df_with_target = create_target_variable(df)
