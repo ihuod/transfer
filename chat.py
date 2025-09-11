@@ -1,30 +1,22 @@
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LogisticRegression
+from catboost import CatBoostClassifier
+from sklearn.metrics import classification_report, roc_auc_score
 
-# Определяем категориальные и числовые колонки
-categorical_features = ['ACTIVITY_GROUP']
-numerical_features = [col for col in X_train.columns if col != 'ACTIVITY_GROUP']
+# CatBoost сам умеет работать с категориальными features!
+cat_features = ['ACTIVITY_GROUP']  # указываем категориальные колонки
 
-# Создаем ColumnTransformer
-preprocessor = ColumnTransformer(
-    transformers=[
-        ('num', StandardScaler(), numerical_features),
-        ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_features)
-    ]
+catboost_model = CatBoostClassifier(
+    random_state=42,
+    cat_features=cat_features,
+    verbose=100,  # выводим прогресс обучения каждые 100 итераций
+    early_stopping_rounds=50,
+    class_weights=[1, np.sum(y_train == 0) / np.sum(y_train == 1)]  # баланс классов
 )
 
-# Создаем pipeline
-baseline_model = Pipeline([
-    ('preprocessor', preprocessor),
-    ('classifier', LogisticRegression(
-        random_state=42,
-        class_weight='balanced',
-        max_iter=1000
-    ))
-])
-
 # Обучаем модель
-baseline_model.fit(X_train, y_train)
-print("✅ Модель с One-Hot Encoding обучена")
+catboost_model.fit(
+    X_train, y_train,
+    eval_set=(X_test, y_test),
+    use_best_model=True
+)
+
+print("✅ CatBoost модель обучена")
