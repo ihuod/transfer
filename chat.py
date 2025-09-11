@@ -1,22 +1,15 @@
-from catboost import CatBoostClassifier
-from sklearn.metrics import classification_report, roc_auc_score
+# Предсказания
+y_pred = catboost_model.predict(X_test)
+y_pred_proba = catboost_model.predict_proba(X_test)[:, 1]
 
-# CatBoost сам умеет работать с категориальными features!
-cat_features = ['ACTIVITY_GROUP']  # указываем категориальные колонки
+print("📊 МЕТРИКИ CatBoost:")
+print(classification_report(y_test, y_pred))
+print(f"ROC-AUC: {roc_auc_score(y_test, y_pred_proba):.4f}")
 
-catboost_model = CatBoostClassifier(
-    random_state=42,
-    cat_features=cat_features,
-    verbose=100,  # выводим прогресс обучения каждые 100 итераций
-    early_stopping_rounds=50,
-    class_weights=[1, np.sum(y_train == 0) / np.sum(y_train == 1)]  # баланс классов
-)
+# Feature importance
+feature_importance = catboost_model.get_feature_importance()
+feature_names = X_train.columns
 
-# Обучаем модель
-catboost_model.fit(
-    X_train, y_train,
-    eval_set=(X_test, y_test),
-    use_best_model=True
-)
-
-print("✅ CatBoost модель обучена")
+print("\n📊 ТОП-20 ВАЖНЫХ ПРИЗНАКОВ:")
+for i in np.argsort(feature_importance)[-20:][::-1]:
+    print(f"{feature_names[i]}: {feature_importance[i]:.4f}")
