@@ -1,135 +1,73 @@
-import numpy as np
-import pandas as pd
-from sklearn.metrics import (accuracy_score, precision_score, recall_score, 
-                             f1_score, roc_auc_score, confusion_matrix, 
-                             classification_report, average_precision_score,
-                             log_loss)
+def manual_baseline_auth_times(df, auth_thr, auth_times_col='AUTH_TIMES_x', target_col='TARGET_NEXT_MONTH'):
+    """
+    Мануальный бейзлайн: предсказываем 1 если AUTH_TIMES_x > auth_thr, иначе 0
+    """
+    # Создаем предсказания
+    y_pred_manual = (df[auth_times_col] > auth_thr).astype(int).values
+    y_true = df[target_col].values
+    
+    # Рассчитываем метрики
+    metrics = calculate_binary_metrics(
+        y_true, y_pred_manual, 
+        model_name=f"Manual Baseline (AUTH_TIMES > {auth_thr})"
+    )
+    
+    return y_pred_manual, metrics
 
-def calculate_binary_metrics(y_true, y_pred, y_pred_proba=None, model_name="Model"):
+# Подбираем оптимальный порог
+def find_optimal_auth_threshold(df, auth_times_col='AUTH_TIMES_x', target_col='TARGET_NEXT_MONTH'):
     """
-    Рассчитывает все основные метрики бинарной классификации
-    
-    Parameters:
-    y_true : array-like, true labels
-    y_pred : array-like, predicted labels
-    y_pred_proba : array-like, predicted probabilities (optional)
-    model_name : str, name of the model for display
-    
-    Returns:
-    dict: Dictionary with all metrics
+    Подбирает оптимальный порог для AUTH_TIMES_x
     """
+    results = []
     
-    # Базовые метрики
-    accuracy = accuracy_score(y_true, y_pred)
-    precision = precision_score(y_true, y_pred, zero_division=0)
-    recall = recall_score(y_true, y_pred, zero_division=0)
-    f1 = f1_score(y_true, y_pred, zero_division=0)
+    # Перебираем разные пороги
+    for threshold in range(0, int(df[auth_times_col].max()) + 1):
+        y_pred = (df[auth_times_col] > threshold).astype(int)
+        
+        # Базовые метрики
+        accuracy = accuracy_score(df[target_col], y_pred)
+        precision = precision_score(df[target_col], y_pred, zero_division=0)
+        recall = recall_score(df[target_col], y_pred, zero_division=0)
+        f1 = f1_score(df[target_col], y_pred, zero_division=0)
+        
+        results.append({
+            'threshold': threshold,
+            'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1
+        })
     
-    # Confusion matrix components
-    cm = confusion_matrix(y_true, y_pred)
-    tn, fp, fn, tp = cm.ravel()
+    # Создаем DataFrame
+    results_df = pd.DataFrame(results)
     
-    # Дополнительные метрики
-    specificity = tn / (tn + fp) if (tn + fp) > 0 else 0  # True Negative Rate
-    fpr = fp / (fp + tn) if (fp + tn) > 0 else 0  # False Positive Rate
-    fnr = fn / (fn + tp) if (fn + tp) > 0 else 0  # False Negative Rate
+    # Находим лучший порог по F1-score
+    best_idx = results_df['f1_score'].idxmax()
+    best_threshold = results_df.loc[best_idx, 'threshold']
+    best_f1 = results_df.loc[best_idx, 'f1_score']
     
-    # Метрики, требующие вероятности
-    metrics_with_proba = {}
-    if y_pred_proba is not None:
-        try:
-            roc_auc = roc_auc_score(y_true, y_pred_proba)
-            pr_auc = average_precision_score(y_true, y_pred_proba)
-            logloss = log_loss(y_true, y_pred_proba)
-            
-            metrics_with_proba = {
-                'ROC-AUC': roc_auc,
-                'PR-AUC': pr_auc,
-                'Log-Loss': logloss
-            }
-        except:
-            print("Предупреждение: Не удалось рассчитать метрики, требующие вероятностей")
-    
-    # Рассчитываем rates
-    total = len(y_true)
-    positive_rate = np.mean(y_true)
-    predicted_positive_rate = np.mean(y_pred)
-    
-    # Собираем все метрики в словарь
-    metrics = {
-        'Accuracy': accuracy,
-        'Precision': precision,
-        'Recall (Sensitivity)': recall,
-        'Specificity': specificity,
-        'F1-Score': f1,
-        'False Positive Rate': fpr,
-        'False Negative Rate': fnr,
-        'True Positives': tp,
-        'True Negatives': tn,
-        'False Positives': fp,
-        'False Negatives': fn,
-        'Total Samples': total,
-        'Positive Rate (Actual)': positive_rate,
-        'Positive Rate (Predicted)': predicted_positive_rate
-    }
-    
-    # Добавляем метрики с вероятностями если они есть
-    metrics.update(metrics_with_proba)
-    
-    # Красиво выводим результаты
-    print(f"📊 МЕТРИКИ БИНАРНОЙ КЛАССИФИКАЦИИ - {model_name}")
-    print("=" * 60)
-    
-    # Основные метрики
-    print("\n🎯 ОСНОВНЫЕ МЕТРИКИ:")
-    print(f"Accuracy:          {accuracy:.4f}")
-    print(f"Precision:         {precision:.4f}")
-    print(f"Recall:            {recall:.4f}")
-    print(f"F1-Score:          {f1:.4f}")
-    print(f"Specificity:       {specificity:.4f}")
-    
-    if y_pred_proba is not None and 'ROC-AUC' in metrics:
-        print(f"ROC-AUC:           {metrics['ROC-AUC']:.4f}")
-        print(f"PR-AUC:            {metrics['PR-AUC']:.4f}")
-        print(f"Log-Loss:          {metrics['Log-Loss']:.4f}")
-    
-    # Confusion Matrix
-    print(f"\n📋 CONFUSION MATRIX:")
-    print(f"                Predicted 0   Predicted 1")
-    print(f"Actual 0         {tn:8d}       {fp:8d}")
-    print(f"Actual 1         {fn:8d}       {tp:8d}")
-    
-    # Rates
-    print(f"\n📈 СТАТИСТИКА:")
-    print(f"True Positives:  {tp}")
-    print(f"True Negatives:  {tn}")
-    print(f"False Positives: {fp} (Type I Error)")
-    print(f"False Negatives: {fn} (Type II Error)")
-    print(f"Total Samples:   {total}")
-    print(f"Actual Positive Rate:   {positive_rate:.3f}")
-    print(f"Predicted Positive Rate: {predicted_positive_rate:.3f}")
-    
-    # Дополнительные расчеты
-    print(f"\n🔍 ДОПОЛНИТЕЛЬНО:")
-    print(f"False Positive Rate: {fpr:.4f}")
-    print(f"False Negative Rate: {fnr:.4f}")
-    
-    return metrics
+    return results_df, best_threshold, best_f1
 
-# Дополнительная функция для сравнения нескольких моделей
-def compare_models_metrics(models_metrics, metric_names=None):
+# Визуализация подбора порога
+def plot_threshold_analysis(results_df, best_threshold):
     """
-    Сравнивает метрики нескольких моделей
+    Визуализирует метрики для разных порогов
     """
-    if metric_names is None:
-        metric_names = ['Accuracy', 'Precision', 'Recall', 'F1-Score', 'ROC-AUC']
+    plt.figure(figsize=(12, 8))
     
-    comparison_data = {}
-    for model_name, metrics in models_metrics.items():
-        comparison_data[model_name] = {metric: metrics.get(metric, np.nan) for metric in metric_names}
+    plt.plot(results_df['threshold'], results_df['accuracy'], label='Accuracy', linewidth=2)
+    plt.plot(results_df['threshold'], results_df['precision'], label='Precision', linewidth=2)
+    plt.plot(results_df['threshold'], results_df['recall'], label='Recall', linewidth=2)
+    plt.plot(results_df['threshold'], results_df['f1_score'], label='F1-Score', linewidth=3)
     
-    comparison_df = pd.DataFrame(comparison_data).T
-    print("📈 СРАВНЕНИЕ МОДЕЛЕЙ:")
-    print(comparison_df.round(4))
+    # Отмечаем лучший порог
+    plt.axvline(x=best_threshold, color='red', linestyle='--', 
+                label=f'Best threshold: {best_threshold}')
     
-    return comparison_df
+    plt.xlabel('Порог AUTH_TIMES_x')
+    plt.ylabel('Метрика')
+    plt.title('Подбор оптимального порога для мануального бейзлайна')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
